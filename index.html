@@ -7,6 +7,9 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Microsoft YaHei", sans-serif; background: #f0f2f5; padding: 16px; }
+  .page { width: 100%; max-width: 900px; margin: 0 auto; }
+  .login-page { max-width: 460px; padding-top: 8vh; }
+  .hidden { display: none; }
   .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
   h2 { font-size: 16px; margin-bottom: 12px; color: #333; border-left: 4px solid #1677ff; padding-left: 8px; }
   label { display: inline-block; width: 110px; color: #555; font-size: 13px; }
@@ -34,65 +37,67 @@
 </head>
 <body>
 
-<div class="card">
-  <h2>1. 登录 (POST /api/auth/login)</h2>
-  <div class="row"><label>平台地址</label><input id="baseUrl" value="https://thingskit.aiotcomm.com.cn"></div>
-  <div class="row"><label>用户名</label><input id="username" autocomplete="username" placeholder="请输入平台账号"></div>
-  <div class="row"><label>密码</label><input id="password" type="password" autocomplete="current-password" placeholder="请输入平台密码"></div>
-  <div class="row"><button class="btn-primary" onclick="doLogin()">登录换 Token</button></div>
-  <div class="row"><label style="vertical-align:top">Token</label><div class="box" id="tokenBox">尚未登录</div></div>
-  <div class="tip">账号、密码和 Token 仅保存在当前浏览器页面内存中，页面不会持久化保存。公共部署仅建议用于受控测试，正式 App 应通过业务后端调用平台接口。</div>
-</div>
+<main id="loginPage" class="page login-page">
+  <div class="card">
+    <h2>登录 ThingsKit</h2>
+    <div class="row"><label>平台地址</label><input id="baseUrl" value="https://thingskit.aiotcomm.com.cn"></div>
+    <div class="row"><label>用户名</label><input id="username" autocomplete="username" placeholder="请输入平台账号"></div>
+    <div class="row"><label>密码</label><input id="password" type="text" inputmode="text" autocomplete="off" placeholder="请输入平台密码"></div>
+    <div class="row"><button class="btn-primary" id="btnLogin" onclick="doLogin()">登录</button></div>
+    <div id="loginStatus" class="box">请输入平台账号和密码</div>
+  </div>
+</main>
 
-<div class="card">
-  <h2>2. 查询并选择网关 (GET /api/tenant/devices)</h2>
-  <div class="row">
-    <button class="btn-green" id="btnQueryDevices" onclick="doQueryDevices()" disabled>查询网关设备</button>
-    <span id="deviceCount" class="device-meta">登录后自动查询</span>
+<main id="appPage" class="page hidden">
+  <div class="card">
+    <h2>查询并选择网关</h2>
+    <div class="row">
+      <button class="btn-green" id="btnQueryDevices" onclick="doQueryDevices()" disabled>查询网关</button>
+      <span id="deviceCount" class="device-meta">正在准备查询</span>
+    </div>
+    <div id="deviceList"><div class="box">尚未查询设备</div></div>
   </div>
-  <div id="deviceList"><div class="box">尚未查询设备</div></div>
-</div>
 
-<div class="card">
-  <h2>3. 命令下发</h2>
-  <div class="row"><label>网关 UUID</label><input id="deviceId" readonly placeholder="请先登录并选择网关"></div>
-  <div class="row">
-    <label>命令模板</label>
-    <select id="cmdTemplate" onchange="onTemplateChange()">
-      <option value="ping">ping 连通测试</option>
-      <option value="update_price">update_price 改价</option>
-      <option value="update_name">update_name 改名</option>
-      <option value="update_tag">update_tag 全量更新</option>
-    </select>
+  <div class="card">
+    <h2>命令下发</h2>
+    <div class="row"><label>当前网关</label><input id="deviceId" readonly placeholder="请先选择网关"></div>
+    <div class="row">
+      <label>功能</label>
+      <select id="cmdTemplate" onchange="onTemplateChange()">
+        <option value="ping">连通测试</option>
+        <option value="list_tags">查询网关节点</option>
+        <option value="update_price">修改价格</option>
+        <option value="update_name">修改商品名称</option>
+        <option value="update_tag">修改全部信息</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>方式</label>
+      <select id="way">
+        <option value="twoway">等待回复</option>
+        <option value="oneway">不等待回复</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>持久性</label>
+      <select id="persistent">
+        <option value="true">开启</option>
+        <option value="false">关闭</option>
+      </select>
+    </div>
+    <div class="row">
+      <label style="vertical-align:top">命令参数</label>
+      <textarea id="paramsBox">{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}</textarea>
+    </div>
+    <div class="row"><button class="btn-orange" id="btnSend" onclick="doSendRpc()" disabled>发送命令</button></div>
+    <div class="row"><label style="vertical-align:top">执行结果</label><div class="box" id="resultBox" style="min-height:40px"></div></div>
   </div>
-  <div class="row">
-    <label>way</label>
-    <select id="way">
-      <option value="twoway">twoway (等设备回复)</option>
-      <option value="oneway">oneway (不等回复)</option>
-    </select>
-    <label style="width:90px">persistent</label>
-    <select id="persistent">
-      <option value="true">true</option>
-      <option value="false">false</option>
-    </select>
-  </div>
-  <div class="row">
-    <label style="vertical-align:top">params JSON</label>
-    <textarea id="paramsBox">{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}</textarea>
-  </div>
-  <div class="row"><button class="btn-orange" id="btnSend" onclick="doSendRpc()" disabled>下发命令</button></div>
-  <div class="row"><label style="vertical-align:top">结果</label><div class="box" id="resultBox" style="min-height:40px"></div></div>
-  <div class="tip">
-    已实测通过：手机(浏览器/App) → 平台 /api/rpc/openApi → MQTT → 网关 gw_price_tag → SLE → 价签 TAG001 → ACK 回传。<br>
-    下发后到节点串口查看 <code>received 15 bytes</code> / <code>ACK=0 sent</code>。
-  </div>
-</div>
 
-<div class="card">
-  <h2>4. 调试日志</h2>
-  <div id="logBox"></div>
-</div>
+  <div class="card">
+    <h2>运行日志</h2>
+    <div id="logBox"></div>
+  </div>
+</main>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -101,6 +106,7 @@ let devices = [];
 
 const TEMPLATES = {
   ping:         '{}',
+  list_tags:    '{}',
   update_price: '{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}',
   update_name:  '{"tag_id":"TAG001","product":"农夫山泉"}',
   update_tag:   '{"tag_id":"TAG001","product":"农夫山泉","price":3.5,"unit":"元/瓶"}'
@@ -143,7 +149,13 @@ async function api(path, opts) {
 
 async function doLogin() {
   const u = $('username').value.trim(), p = $('password').value;
-  if (!u || !p) { log('err', '请填写用户名和密码'); return; }
+  if (!u || !p) {
+    $('loginStatus').textContent = '请填写用户名和密码';
+    return;
+  }
+  const button = $('btnLogin');
+  button.disabled = true;
+  $('loginStatus').textContent = '正在登录...';
   try {
     const data = await api('/api/auth/login', {
       method: 'POST',
@@ -151,21 +163,24 @@ async function doLogin() {
     });
     token = data.token;
     if (!token) throw new Error('登录响应中没有 token');
-    $('tokenBox').textContent = '已获取（仅保存在当前页面内存中）';
     $('password').value = '';
-    log('ok', '✓ 登录成功');
+    $('loginStatus').textContent = '登录成功';
+    $('loginPage').classList.add('hidden');
+    $('appPage').classList.remove('hidden');
+    log('ok', '登录成功');
     $('btnSend').disabled = true;
     $('btnQueryDevices').disabled = false;
     await doQueryDevices();
   } catch (e) {
-    log('err', `✗ 登录失败: ${e.message}`);
+    $('loginStatus').textContent = `登录失败: ${e.message}`;
     token = null;
     devices = [];
-    $('tokenBox').textContent = '尚未登录';
     $('deviceId').value = '';
     renderDevices();
     $('btnSend').disabled = true;
     $('btnQueryDevices').disabled = true;
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -262,7 +277,11 @@ async function doQueryDevices() {
 }
 
 function onTemplateChange() {
-  $('paramsBox').value = TEMPLATES[$('cmdTemplate').value];
+  const command = $('cmdTemplate').value;
+  $('paramsBox').value = TEMPLATES[command];
+  if (command === 'list_tags') {
+    $('way').value = 'twoway';
+  }
 }
 
 function buildBody() {
