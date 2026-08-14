@@ -191,8 +191,10 @@ function getDeviceId(device) {
 }
 
 function isGateway(device) {
-  return String(device.type || '').toUpperCase() === 'GATEWAY' ||
+  const isGatewayDevice = String(device.type || '').toUpperCase() === 'GATEWAY' ||
     Boolean(device.additionalInfo && device.additionalInfo.gateway === true);
+  const identity = `${device.name || ''} ${device.label || ''}`.toLowerCase();
+  return isGatewayDevice && identity.includes('price_tag');
 }
 
 function renderDevices() {
@@ -260,13 +262,13 @@ async function doQueryDevices() {
     } while (page < totalPages);
 
     devices = allDevices.filter(device => isGateway(device) && getDeviceId(device));
-    $('deviceCount').textContent = `查询到 ${devices.length} 个网关（设备总数 ${allDevices.length}）`;
+    $('deviceCount').textContent = `查询到 ${devices.length} 个价签网关（设备总数 ${allDevices.length}）`;
     renderDevices();
 
     if (devices.length === 1) {
       selectDevice(getDeviceId(devices[0]), devices[0].name || '未命名网关');
     }
-    log('ok', `✓ 设备查询完成，共 ${allDevices.length} 台设备，${devices.length} 台网关`);
+    log('ok', `✓ 设备查询完成，共 ${allDevices.length} 台设备，${devices.length} 台价签网关`);
   } catch (e) {
     devices = [];
     $('deviceCount').textContent = '查询失败';
