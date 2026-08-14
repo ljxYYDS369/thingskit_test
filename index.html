@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ThingsKit 价签命令下发 Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f0f2f5; padding: 16px; }
+  .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  h2 { font-size: 16px; margin-bottom: 12px; color: #333; border-left: 4px solid #1677ff; padding-left: 8px; }
+  label { display: inline-block; width: 110px; color: #555; font-size: 13px; }
+  input, select { width: 100%; max-width: 320px; padding: 7px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+  .row { margin-bottom: 10px; }
+  button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 4px 8px 4px 0; }
+  .btn-primary { background: #1677ff; color: #fff; }
+  .btn-green { background: #52c41a; color: #fff; }
+  .btn-orange { background: #fa8c16; color: #fff; }
+  .btn-device { width: 100%; margin: 0; padding: 12px; background: #fff; color: #333; border: 1px solid #d9d9d9; text-align: left; }
+  .btn-device:hover { border-color: #1677ff; background: #f0f7ff; }
+  .btn-device.selected { border-color: #1677ff; background: #e6f4ff; box-shadow: 0 0 0 1px #1677ff; }
+  button:disabled { background: #ccc; cursor: not-allowed; }
+  .box { background: #f6f8fa; border: 1px dashed #ccc; border-radius: 4px; padding: 8px; font-size: 12px; word-break: break-all; min-height: 20px; color: #666; }
+  textarea { width: 100%; max-width: 520px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: Consolas, monospace; }
+  #paramsBox { height: 80px; }
+  #resultBox { background: #f6f8fa; border: 1px solid #eee; border-radius: 4px; padding: 10px; font-size: 13px; font-family: Consolas, monospace; white-space: pre-wrap; word-break: break-all; min-height: 40px; color: #333; }
+  #logBox { background: #1e1e1e; color: #d4d4d4; border-radius: 4px; padding: 10px; font-size: 12px; font-family: Consolas, monospace; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; }
+  #deviceList { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+  .device-name { display: block; font-size: 14px; font-weight: 600; margin-bottom: 5px; }
+  .device-meta { display: block; color: #666; font-size: 12px; line-height: 1.6; word-break: break-all; }
+  .tip { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; padding: 8px 12px; font-size: 12px; color: #ad6800; margin-bottom: 12px; line-height: 1.6; }
+  .ok { color: #52c41a; } .err { color: #f5222d; } .info { color: #1677ff; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>1. 登录 (POST /api/auth/login)</h2>
+  <div class="row"><label>平台地址</label><input id="baseUrl" value="https://thingskit.aiotcomm.com.cn"></div>
+  <div class="row"><label>用户名</label><input id="username" autocomplete="username" placeholder="请输入平台账号"></div>
+  <div class="row"><label>密码</label><input id="password" type="password" autocomplete="current-password" placeholder="请输入平台密码"></div>
+  <div class="row"><button class="btn-primary" onclick="doLogin()">登录换 Token</button></div>
+  <div class="row"><label style="vertical-align:top">Token</label><div class="box" id="tokenBox">尚未登录</div></div>
+  <div class="tip">账号、密码和 Token 仅保存在当前浏览器页面内存中，页面不会持久化保存。公共部署仅建议用于受控测试，正式 App 应通过业务后端调用平台接口。</div>
+</div>
+
+<div class="card">
+  <h2>2. 查询并选择网关 (GET /api/tenant/devices)</h2>
+  <div class="row">
+    <button class="btn-green" id="btnQueryDevices" onclick="doQueryDevices()" disabled>查询网关设备</button>
+    <span id="deviceCount" class="device-meta">登录后自动查询</span>
+  </div>
+  <div id="deviceList"><div class="box">尚未查询设备</div></div>
+</div>
+
+<div class="card">
+  <h2>3. 命令下发</h2>
+  <div class="row"><label>网关 UUID</label><input id="deviceId" readonly placeholder="请先登录并选择网关"></div>
+  <div class="row">
+    <label>命令模板</label>
+    <select id="cmdTemplate" onchange="onTemplateChange()">
+      <option value="ping">ping 连通测试</option>
+      <option value="update_price">update_price 改价</option>
+      <option value="update_name">update_name 改名</option>
+      <option value="update_tag">update_tag 全量更新</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>way</label>
+    <select id="way">
+      <option value="twoway">twoway (等设备回复)</option>
+      <option value="oneway">oneway (不等回复)</option>
+    </select>
+    <label style="width:90px">persistent</label>
+    <select id="persistent">
+      <option value="true">true</option>
+      <option value="false">false</option>
+    </select>
+  </div>
+  <div class="row">
+    <label style="vertical-align:top">params JSON</label>
+    <textarea id="paramsBox">{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}</textarea>
+  </div>
+  <div class="row"><button class="btn-orange" id="btnSend" onclick="doSendRpc()" disabled>下发命令</button></div>
+  <div class="row"><label style="vertical-align:top">结果</label><div class="box" id="resultBox" style="min-height:40px"></div></div>
+  <div class="tip">
+    已实测通过：手机(浏览器/App) → 平台 /api/rpc/openApi → MQTT → 网关 gw_price_tag → SLE → 价签 TAG001 → ACK 回传。<br>
+    下发后到节点串口查看 <code>received 15 bytes</code> / <code>ACK=0 sent</code>。
+  </div>
+</div>
+
+<div class="card">
+  <h2>4. 调试日志</h2>
+  <div id="logBox"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let token = null;
+let devices = [];
+
+const TEMPLATES = {
+  ping:         '{}',
+  update_price: '{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}',
+  update_name:  '{"tag_id":"TAG001","product":"农夫山泉"}',
+  update_tag:   '{"tag_id":"TAG001","product":"农夫山泉","price":3.5,"unit":"元/瓶"}'
+};
+
+function log(kind, msg) {
+  const box = $('logBox');
+  const line = document.createElement('div');
+  line.className = kind;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function baseUrl() {
+  const u = $('baseUrl').value.trim().replace(/\/+$/, '');
+  if (!u) { log('err', '请先填写平台地址'); throw new Error('no base url'); }
+  return u;
+}
+
+async function api(path, opts) {
+  const url = baseUrl() + path;
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['X-Authorization'] = 'Bearer ' + token;
+  const cfg = Object.assign({}, opts, { headers });
+  log('info', `→ ${cfg.method || 'GET'} ${url}`);
+  if (cfg.body) log('info', path === '/api/auth/login' ? '  body: 登录凭据已隐藏' : `  body: ${cfg.body}`);
+  try {
+    const resp = await fetch(url, cfg);
+    const text = await resp.text();
+    log('info', `← HTTP ${resp.status}`);
+    if (text) log('info', path === '/api/auth/login' ? '  resp: 登录凭据已隐藏' : `  resp: ${text}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text || resp.statusText}`);
+    return text ? JSON.parse(text) : null;
+  } catch (e) {
+    log('err', `✗ 请求失败: ${e.message}`);
+    throw e;
+  }
+}
+
+async function doLogin() {
+  const u = $('username').value.trim(), p = $('password').value;
+  if (!u || !p) { log('err', '请填写用户名和密码'); return; }
+  try {
+    const data = await api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: u, password: p })
+    });
+    token = data.token;
+    if (!token) throw new Error('登录响应中没有 token');
+    $('tokenBox').textContent = '已获取（仅保存在当前页面内存中）';
+    $('password').value = '';
+    log('ok', '✓ 登录成功');
+    $('btnSend').disabled = true;
+    $('btnQueryDevices').disabled = false;
+    await doQueryDevices();
+  } catch (e) {
+    log('err', `✗ 登录失败: ${e.message}`);
+    token = null;
+    devices = [];
+    $('tokenBox').textContent = '尚未登录';
+    $('deviceId').value = '';
+    renderDevices();
+    $('btnSend').disabled = true;
+    $('btnQueryDevices').disabled = true;
+  }
+}
+
+function getDeviceId(device) {
+  if (!device) return '';
+  if (typeof device.id === 'string') return device.id;
+  return device.id && typeof device.id.id === 'string' ? device.id.id : '';
+}
+
+function isGateway(device) {
+  return String(device.type || '').toUpperCase() === 'GATEWAY' ||
+    Boolean(device.additionalInfo && device.additionalInfo.gateway === true);
+}
+
+function renderDevices() {
+  const list = $('deviceList');
+  const selectedId = $('deviceId').value.trim();
+  list.replaceChildren();
+
+  if (devices.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'box';
+    empty.textContent = '当前账号下没有查询到网关设备';
+    list.appendChild(empty);
+    return;
+  }
+
+  devices.forEach(device => {
+    const id = getDeviceId(device);
+    const button = document.createElement('button');
+    const name = document.createElement('span');
+    const meta = document.createElement('span');
+
+    button.type = 'button';
+    button.className = 'btn-device' + (id === selectedId ? ' selected' : '');
+    button.onclick = () => selectDevice(id, device.name || id);
+
+    name.className = 'device-name';
+    name.textContent = device.name || '未命名网关';
+    meta.className = 'device-meta';
+    meta.textContent = `标签: ${device.label || '-'} | 类型: ${device.type || '-'}\nUUID: ${id || '-'}`;
+
+    button.append(name, meta);
+    list.appendChild(button);
+  });
+}
+
+function selectDevice(id, name) {
+  if (!id) {
+    log('err', '所选设备没有有效 UUID');
+    return;
+  }
+  $('deviceId').value = id;
+  $('btnSend').disabled = false;
+  renderDevices();
+  log('ok', `✓ 已选择网关 ${name} (${id})`);
+}
+
+async function doQueryDevices() {
+  if (!token) { log('err', '请先登录'); return; }
+
+  const button = $('btnQueryDevices');
+  button.disabled = true;
+  $('deviceCount').textContent = '正在查询...';
+
+  try {
+    const allDevices = [];
+    let page = 0;
+    let totalPages = 1;
+
+    do {
+      const data = await api(`/api/tenant/devices?pageSize=100&page=${page}`, { method: 'GET' });
+      const pageDevices = Array.isArray(data) ? data : (Array.isArray(data && data.data) ? data.data : []);
+      allDevices.push(...pageDevices);
+      totalPages = Number.isInteger(data && data.totalPages) ? data.totalPages : 1;
+      page += 1;
+    } while (page < totalPages);
+
+    devices = allDevices.filter(device => isGateway(device) && getDeviceId(device));
+    $('deviceCount').textContent = `查询到 ${devices.length} 个网关（设备总数 ${allDevices.length}）`;
+    renderDevices();
+
+    if (devices.length === 1) {
+      selectDevice(getDeviceId(devices[0]), devices[0].name || '未命名网关');
+    }
+    log('ok', `✓ 设备查询完成，共 ${allDevices.length} 台设备，${devices.length} 台网关`);
+  } catch (e) {
+    devices = [];
+    $('deviceCount').textContent = '查询失败';
+    renderDevices();
+  } finally {
+    button.disabled = !token;
+  }
+}
+
+function onTemplateChange() {
+  $('paramsBox').value = TEMPLATES[$('cmdTemplate').value];
+}
+
+function buildBody() {
+  let params;
+  try { params = JSON.parse($('paramsBox').value); }
+  catch (e) { log('err', 'params JSON 格式错误: ' + e.message); throw e; }
+  const deviceId = $('deviceId').value.trim();
+  if (!deviceId) {
+    log('err', '请先查询并选择网关设备');
+    throw new Error('no device id');
+  }
+  return {
+    additionalInfo: { cmdType: 1 },
+    method: $('cmdTemplate').value,
+    persistent: $('persistent').value === 'true',
+    params: params,
+    way: $('way').value,
+    deviceId: deviceId
+  };
+}
+
+async function doSendRpc() {
+  if (!token) { log('err', '请先登录'); return; }
+  let body;
+  try { body = buildBody(); }
+  catch (e) { return; }
+  $('resultBox').textContent = '等待平台响应...';
+  try {
+    const data = await api('/api/rpc/openApi', { method: 'POST', body: JSON.stringify(body) });
+    $('resultBox').textContent = JSON.stringify(data, null, 2);
+    log('ok', `✓ 命令已发送，平台返回 rpcId: ${data.rpcId}`);
+    log('ok', '  去网关/节点串口查看是否收到');
+  } catch (e) {
+    $('resultBox').textContent = '请求失败: ' + e.message;
+  }
+}
+
+onTemplateChange();
+</script>
+</body>
+</html>
