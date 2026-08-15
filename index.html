@@ -35,14 +35,14 @@
   .ok { color: #52c41a; } .err { color: #f5222d; } .info { color: #1677ff; }
 
   /* 折叠看板 */
-  .tree-item { margin: 4px 0; }
+  .tree-item { margin: 2px 0; }
   .tree-row { display: flex; align-items: stretch; gap: 2px; }
   .tree-row .tree-header { flex: 1; }
   .tree-row .tree-actions { display: flex; align-items: stretch; }
-  .tree-row .tree-actions button { height: 100%; padding: 10px 16px; }
+  .tree-row .tree-actions button { height: 100%; padding: 6px 12px; }
   .tree-header {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px; background: #fafafa; border: 1px solid #e8e8e8;
+    padding: 6px 10px; background: #fafafa; border: 1px solid #e8e8e8;
     border-radius: 4px; cursor: pointer; user-select: none;
   }
   .tree-header:hover { border-color: #d9d9d9; }
@@ -50,24 +50,27 @@
   .tree-toggle { font-size: 12px; color: #999; width: 16px; }
   .tree-title { font-weight: 600; font-size: 14px; color: #333; flex: 1; }
   .tree-meta { font-size: 12px; color: #888; }
-  .tree-actions { display: flex; gap: 6px; padding: 6px 0 6px 12px; }
+  .tree-actions { display: flex; gap: 6px; }
   .tree-actions button { padding: 4px 10px; font-size: 12px; margin: 0; }
   .tree-actions button:hover { background: #389e0d; }
   .tree-body {
-    display: none; padding: 8px 12px 12px;
-    background: #fff; border: 1px solid #e8e8e8; border-top: none;
-    border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;
+    display: none; padding: 4px 0 6px 10px;
+    background: #fff; border-left: 1px solid #e8e8e8;
   }
   .tree-body.open { display: block; }
+  /* 节点行:文本编辑行,无框 */
   .node-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 8px; margin: 2px 0; background: #f9f9f9;
-    border-radius: 3px; font-size: 13px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 2px 0; margin: 1px 0; font-size: 12px; flex: 1;
   }
-  .node-tag { font-weight: 600; color: #1677ff; min-width: 70px; }
-  .node-name { color: #333; flex: 1; }
-  .node-price { color: #f5222d; font-weight: 600; }
-  .node-unit { color: #888; font-size: 12px; }
+  .node-row .node-tag { flex-shrink: 0; font-weight: 600; color: #1677ff; min-width: 64px; }
+  .node-row input.node-input {
+    flex: 1; min-width: 0; padding: 3px 6px; font-size: 12px;
+    border: 1px solid #ccc; border-radius: 3px;
+  }
+  .node-row input.node-price-input { flex: 0 0 80px; }
+  .node-row input.node-unit-input { flex: 0 0 80px; }
+  .node-row .node-send { padding: 3px 10px; font-size: 12px; margin: 0; flex-shrink: 0; }
   .node-empty { color: #999; font-size: 13px; padding: 8px; }
 </style>
 </head>
@@ -369,8 +372,18 @@ function renderTree() {
           });
         };
 
-        row.append(tag, nameInput, priceInput, unitInput, btnSend);
-        body.appendChild(row);
+        // 节点字段行(文本编辑行,无框)
+        row.append(tag, nameInput, priceInput, unitInput);
+
+        // 下发按钮与节点行并行,不嵌套
+        const nodeActions = document.createElement('div');
+        nodeActions.className = 'tree-actions';
+        nodeActions.append(btnSend);
+
+        const nodeRow = document.createElement('div');
+        nodeRow.className = 'tree-row';
+        nodeRow.append(row, nodeActions);
+        body.appendChild(nodeRow);
       });
     }
 
