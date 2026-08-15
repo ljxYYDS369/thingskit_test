@@ -305,25 +305,87 @@ function buildBody() {
   };
 }
 
+// 把网关返回的 JSON 转义成人类可读的执行结果
+function renderResult(method, data, err) {
+  const deviceId = $('deviceId').value.trim();
+  const shortId = deviceId ? deviceId.slice(-4) : '?';
+
+  // 请求本身失败
+  if (err) {
+    if (method === 'ping') return `网关 ${shortId} 离线\n（请求失败: ${err}）`;
+    return `请求失败: ${err}`;
+  }
+
+  // 没拿到网关应答（平台只返回 rpcId，说明走的是异步接口）
+  if (data && data.rpcId && !data.status && !data.tags) {
+    return '平台已受理命令，但未收到网关应答\n（请将命令改为同步 twoway 方式）';
+  }
+
+  if (method === 'ping') {
+    const ok = data && data.status === 'ok' &&
+               (data.message === 'pong' || data.message === 'ok');
+    if (ok) return `网关 ${shortId} 在线`;
+    const reason = (data && data.message) ? data.message : '无应答';
+    return `网关 ${shortId} 离线\n（${reason}）`;
+  }
+
+  if (method === 'list_tags') {
+    const tags = Array.isArray(data && data.tags) ? data.tags : [];
+    if (tags.length === 0) return '未发现价签节点';
+    const lines = [];
+    tags.forEach(t => {
+      lines.push(`节点 ${t.tag_id || '-'}`);
+      lines.push(`商品名称: ${t.product || '-'}`);
+      lines.push(`价格: ${t.price != null ? t.price : '-'}`);
+      lines.push(`单位: ${t.unit || '-'}`);
+      lines.push('');  // 空行分隔
+    });
+    return lines.join('\n').replace(/\n+$/, '');
+  }
+
+  // update_price / update_name / update_tag
+  if (data && data.status === 'ok') {
+    const tag = data.tag_id ? `（节点 ${data.tag_id}）` : '';
+    return `修改成功${tag}`;
+  }
+  if (data && data.status === 'error') {
+    const tag = data.tag_id ? `（节点 ${data.tag_id}）` : '';
+    const reason = data.message ? `: ${data.message}` : '';
+    return `修改失败${tag}${reason}`;
+  }
+
+  // 兜底：无法识别的格式，原样显示
+  return `未知响应格式:\n${JSON.stringify(data, null, 2)}`;
+}
+
 async function doSendRpc() {
   if (!token) { log('err', '请先登录'); return; }
   let body;
   try { body = buildBody(); }
   catch (e) { return; }
+  const method = body.method;
   $('resultBox').textContent = '等待平台响应...';
+
   try {
-    const isTagQuery = body.method === 'list_tags';
-    const path = isTagQuery ? `/api/rpc/twoway/${body.deviceId}` : '/api/rpc/openApi';
-    const requestBody = isTagQuery ? { method: body.method, params: body.params } : body;
+    // 所有命令统一走 twoway 同步接口，直接拿网关应答
+    const path = `/api/rpc/twoway/${body.deviceId}`;
+    const requestBody = { method: body.method, params: body.params };
     const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
-    $('resultBox').textContent = JSON.stringify(data, null, 2);
-    if (isTagQuery) {
+
+    $('resultBox').textContent = renderResult(method, data, null);
+
+    if (method === 'list_tags') {
       log('ok', `✓ 查询完成，共返回 ${Array.isArray(data.tags) ? data.tags.length : 0} 个节点`);
+    } else if (method === 'ping') {
+      const ok = data && data.status === 'ok';
+      log(ok ? 'ok' : 'err', ok ? '✓ 网关在线' : '✗ 网关离线');
     } else {
-      log('ok', `✓ 命令已发送，平台返回 rpcId: ${data.rpcId}`);
+      const ok = data && data.status === 'ok';
+      log(ok ? 'ok' : 'err', ok ? '✓ 修改成功' : '✗ 修改失败');
     }
   } catch (e) {
-    $('resultBox').textContent = '请求失败: ' + e.message;
+    $('resultBox').textContent = renderResult(method, null, e.message);
+    log('err', `✗ 命令失败: ${e.message}`);
   }
 }
 
