@@ -36,6 +36,9 @@
 
   /* 折叠看板 */
   .tree-item { margin: 4px 0; }
+  .tree-row { display: flex; align-items: stretch; gap: 8px; }
+  .tree-row .tree-header { flex: 1; }
+  .tree-row .tree-actions { padding: 6px 8px; }
   .tree-header {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 12px; background: #fafafa; border: 1px solid #e8e8e8;
@@ -373,7 +376,11 @@ function renderTree() {
       });
     }
 
-    item.append(header, actions, body);
+    // header 和 actions 左右并行同一行,body 在下方
+    const row = document.createElement('div');
+    row.className = 'tree-row';
+    row.append(header, actions);
+    item.append(row, body);
     container.appendChild(item);
   });
 }
