@@ -38,7 +38,8 @@
   .tree-item { margin: 4px 0; }
   .tree-row { display: flex; align-items: stretch; gap: 8px; }
   .tree-row .tree-header { flex: 1; }
-  .tree-row .tree-actions { padding: 6px 8px; }
+  .tree-row .tree-actions { padding: 0 8px; display: flex; align-items: stretch; }
+  .tree-row .tree-actions button { height: 100%; padding: 10px 16px; }
   .tree-header {
     display: flex; align-items: center; gap: 8px;
     padding: 10px 12px; background: #fafafa; border: 1px solid #e8e8e8;
@@ -564,7 +565,7 @@ function renderResult(method, data, err) {
   }
 
   // update_price / update_name / update_tag
-  if (data && data.status === 'ok') {
+  if (data && (data.status === 'ok' || data.status === 'success')) {
     const tag = data.tag_id ? `（节点 ${data.tag_id}）` : '';
     return `修改成功${tag}`;
   }
