@@ -279,10 +279,8 @@ function getDeviceId(device) {
 }
 
 function isGateway(device) {
-  const isGatewayDevice = String(device.type || '').toUpperCase() === 'GATEWAY' ||
-    Boolean(device.additionalInfo && device.additionalInfo.gateway === true);
-  const identity = `${device.name || ''} ${device.label || ''}`.toLowerCase();
-  return isGatewayDevice && identity.includes('price_tag');
+  const identity = `${device.name || ''} ${device.label || ''}`.toUpperCase();
+  return identity.includes('GW');
 }
 
 function renderTree() {
@@ -445,7 +443,7 @@ async function doQueryDevices() {
     });
     saveExpanded();
 
-    $('deviceCount').textContent = `查询到 ${gateways.length} 个价签网关（设备总数 ${allDevices.length}）`;
+    $('deviceCount').textContent = `查询到 ${gateways.length} 个网关`;
     renderTree();
 
     if (gateways.length === 1) {
