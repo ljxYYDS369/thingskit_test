@@ -135,6 +135,25 @@ const $ = id => document.getElementById(id);
 let token = null;
 let devices = [];
 
+// ===== 自动登录持久化 =====
+const LS_AUTH = 'pt_auth';  // {token, baseUrl}
+
+function saveAuth(tkn, bUrl) {
+  try { localStorage.setItem(LS_AUTH, JSON.stringify({token: tkn, baseUrl: bUrl})); }
+  catch (e) {}
+}
+
+function loadAuth() {
+  try {
+    const raw = localStorage.getItem(LS_AUTH);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function clearAuth() {
+  try { localStorage.removeItem(LS_AUTH); } catch (e) {}
+}
+
 const TEMPLATES = {
   ping:         '{}',
   list_tags:    '{}',
@@ -230,6 +249,7 @@ async function doLogin() {
     });
     token = data.token;
     if (!token) throw new Error('登录响应中没有 token');
+    saveAuth(token, baseUrl());
     $('password').value = '';
     $('loginStatus').textContent = '登录成功';
     $('loginPage').classList.add('hidden');
@@ -627,6 +647,56 @@ async function doSendRpc() {
     log('err', `✗ 命令失败: ${e.message}`);
   }
 }
+
+// 页面加载时尝试自动登录
+(async function autoLogin() {
+  const saved = loadAuth();
+  if (!saved || !saved.token) { return; }  // 没有保存的 token,留在登录页
+
+  // 恢复平台地址和 token
+  if (saved.baseUrl) { $('baseUrl').value = saved.baseUrl; }
+  token = saved.token;
+  log('info', '检测到已保存的登录凭证,尝试自动登录...');
+
+  try {
+    // 用保存的 token 试一次轻量请求,验证 token 是否仍然有效
+    await api('/api/tenant/devices?pageSize=1&page=0', { method: 'GET' });
+
+    // token 有效,跳过登录页直接进入看板
+    $('loginPage').classList.add('hidden');
+    $('appPage').classList.remove('hidden');
+    log('ok', '自动登录成功');
+
+    // 恢复折叠状态和节点数据
+    expanded = loadExpanded();
+    $('btnSend').disabled = true;
+    $('btnQueryDevices').disabled = false;
+    await doQueryDevices();
+
+    let autoExpanded = 0;
+    gateways.forEach(gw => {
+      const sn = loadNodes(gw.id);
+      if (sn && sn.length > 0 && !expanded[gw.id]) {
+        nodes[gw.id] = sn;
+        expanded[gw.id] = true;
+        autoExpanded++;
+      } else if (sn) {
+        nodes[gw.id] = sn;
+      }
+    });
+    if (autoExpanded > 0) {
+      saveExpanded();
+      renderTree();
+      log('info', `恢复了 ${autoExpanded} 个网关的节点数据`);
+    }
+  } catch (e) {
+    // token 过期或无效,清除并留在登录页
+    log('err', `自动登录失败: ${e.message},请重新登录`);
+    token = null;
+    clearAuth();
+    $('loginStatus').textContent = '登录已过期,请重新登录';
+  }
+})();
 
 onTemplateChange();
 </script>
