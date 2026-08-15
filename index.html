@@ -322,17 +322,12 @@ function renderTree() {
     const actions = document.createElement('span');
     actions.className = 'tree-actions';
 
-    const btnPing = document.createElement('button');
-    btnPing.className = 'btn-orange';
-    btnPing.textContent = 'ping';
-    btnPing.onclick = (e) => { e.stopPropagation(); doPingGateway(id, gw.name || id); };
-
     const btnQuery = document.createElement('button');
     btnQuery.className = 'btn-green';
     btnQuery.textContent = '查询节点';
     btnQuery.onclick = (e) => { e.stopPropagation(); refreshNodes(id, gw.name || id); };
 
-    actions.append(btnPing, btnQuery);
+    actions.append(btnQuery);
 
     // 点击 header 折叠/展开,并选中该网关
     header.onclick = () => {
@@ -475,7 +470,7 @@ async function doQueryDevices() {
   }
 }
 
-// 查询指定网关的节点列表,增删对比后保存到 localStorage
+// 查询指定网关的节点列表,用新结果完全替换
 async function refreshNodes(gwId, gwName) {
   if (!token || !gwId) return;
   log('info', `→ 查询网关 ${gwName || gwId} 的节点列表...`);
@@ -485,33 +480,18 @@ async function refreshNodes(gwId, gwName) {
     const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
 
     const freshTags = Array.isArray(data && data.tags) ? data.tags : [];
-    const oldTags = nodes[gwId] || [];
-
-    // 增删对比:以 tag_id 为键
-    const oldMap = {};
-    oldTags.forEach(t => { oldMap[t.tag_id] = t; });
-    const merged = freshTags.map(nt => {
-      const ot = oldMap[nt.tag_id];
-      return {
-        tag_id: nt.tag_id || '-',
-        product: nt.product || (ot ? ot.product : '-'),
-        price: (nt.price != null) ? nt.price : (ot ? ot.price : null),
-        unit: nt.unit || (ot ? ot.unit : '')
-      };
-    });
-
-    // 增:新节点数;删:旧节点数 - 合并后保留的旧节点数
-    const newCount = freshTags.length;
-    const removedCount = oldTags.length - merged.filter(m => oldMap[m.tag_id]).length;
-
-    nodes[gwId] = merged;
+    nodes[gwId] = freshTags.map(nt => ({
+      tag_id: nt.tag_id || '-',
+      product: nt.product || '-',
+      price: (nt.price != null) ? nt.price : null,
+      unit: nt.unit || ''
+    }));
     saveNodes(gwId);
     expanded[gwId] = true;  // 查询后自动展开
     saveExpanded();
     renderTree();
 
-    log('ok', `✓ 网关 ${gwName || gwId} 查询完成: ${newCount} 个节点` +
-             (removedCount > 0 ? `,删除 ${removedCount} 个旧节点` : ''));
+    log('ok', `✓ 网关 ${gwName || gwId} 查询完成: ${freshTags.length} 个节点`);
   } catch (e) {
     log('err', `✗ 查询节点失败: ${e.message}`);
   }
