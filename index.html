@@ -70,12 +70,10 @@
 
 <main id="loginPage" class="page login-page">
   <div class="card">
-    <h2>登录 ThingsKit</h2>
     <div class="row"><label>平台地址</label><input id="baseUrl" value="https://thingskit.aiotcomm.com.cn"></div>
     <div class="row"><label>用户名</label><input id="username" autocomplete="username" placeholder="请输入平台账号"></div>
     <div class="row"><label>密码</label><input id="password" type="text" inputmode="text" autocomplete="off" placeholder="请输入平台密码"></div>
     <div class="row"><button class="btn-primary" id="btnLogin" onclick="doLogin()">登录</button></div>
-    <div id="loginStatus" class="box">请输入平台账号和密码</div>
   </div>
 </main>
 
@@ -222,12 +220,11 @@ async function api(path, opts) {
 async function doLogin() {
   const u = $('username').value.trim(), p = $('password').value;
   if (!u || !p) {
-    $('loginStatus').textContent = '请填写用户名和密码';
+    log('err', '请填写用户名和密码');
     return;
   }
   const button = $('btnLogin');
   button.disabled = true;
-  $('loginStatus').textContent = '正在登录...';
   try {
     const data = await api('/api/auth/login', {
       method: 'POST',
@@ -237,7 +234,6 @@ async function doLogin() {
     if (!token) throw new Error('登录响应中没有 token');
     saveAuth(baseUrl(), u, p);
     $('password').value = '';
-    $('loginStatus').textContent = '登录成功';
     $('loginPage').classList.add('hidden');
     $('appPage').classList.remove('hidden');
     log('ok', '登录成功');
@@ -264,7 +260,7 @@ async function doLogin() {
       log('info', `恢复了 ${autoExpanded} 个网关的节点数据`);
     }
   } catch (e) {
-    $('loginStatus').textContent = `登录失败: ${e.message}`;
+    log('err', `登录失败: ${e.message}`);
     token = null;
     devices = [];
     $('deviceId').value = '';
@@ -635,7 +631,6 @@ async function doSendRpc() {
   if (saved.baseUrl) { $('baseUrl').value = saved.baseUrl; }
   if (saved.username) { $('username').value = saved.username; }
   if (saved.password) { $('password').value = saved.password; }
-  $('loginStatus').textContent = '已填充上次登录的账号密码,点击登录继续';
 })();
 
 onTemplateChange();
