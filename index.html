@@ -94,7 +94,6 @@
     <div class="row">
       <label>功能</label>
       <select id="cmdTemplate" onchange="onTemplateChange()">
-        <option value="ping">连通测试</option>
         <option value="list_tags">查询网关节点</option>
         <option value="update_price">修改价格</option>
         <option value="update_name">修改商品名称</option>
@@ -140,7 +139,6 @@ function clearAuth() {
 }
 
 const TEMPLATES = {
-  ping:         '{}',
   list_tags:    '{}',
   update_price: '{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}',
   update_name:  '{"tag_id":"TAG001","product":"农夫山泉"}',
@@ -418,8 +416,25 @@ async function doQueryDevices() {
 
     const gwDevices = allDevices.filter(device => isGateway(device) && getDeviceId(device));
 
+    // 对每个网关下发 ping 连通测试,只保留 ping 成功的
+    $('deviceCount').textContent = `连通测试中... (0/${gwDevices.length})`;
+    const onlineDevices = [];
+    for (let i = 0; i < gwDevices.length; i++) {
+      const d = gwDevices[i];
+      const id = getDeviceId(d);
+      const name = d.name || id;
+      $('deviceCount').textContent = `连通测试中... (${i}/${gwDevices.length})`;
+      const online = await doPingGateway(id, name);
+      if (online) {
+        onlineDevices.push(d);
+        log('ok', `✓ ${name} 在线`);
+      } else {
+        log('err', `✗ ${name} 离线,不显示`);
+      }
+    }
+
     // 网关列表刷新:增删对比,保留已有节点数据
-    const newIds = new Set(gwDevices.map(getDeviceId));
+    const newIds = new Set(onlineDevices.map(getDeviceId));
     Object.keys(nodes).forEach(oldId => {
       if (!newIds.has(oldId)) {
         delete nodes[oldId];
@@ -427,7 +442,7 @@ async function doQueryDevices() {
       }
     });
 
-    gateways = gwDevices.map(d => ({
+    gateways = onlineDevices.map(d => ({
       id: getDeviceId(d),
       name: d.name || getDeviceId(d),
       label: d.label || '',
@@ -450,7 +465,7 @@ async function doQueryDevices() {
     if (gateways.length === 1) {
       selectDevice(gateways[0].id, gateways[0].name);
     }
-    log('ok', `✓ 设备查询完成，共 ${allDevices.length} 台设备，${gateways.length} 台价签网关`);
+    log('ok', `✓ 设备查询完成,${gwDevices.length} 个 GW 设备,${gateways.length} 个在线`);
   } catch (e) {
     gateways = [];
     $('deviceCount').textContent = '查询失败';
@@ -502,19 +517,18 @@ async function refreshNodes(gwId, gwName) {
   }
 }
 
-// 对单个网关执行 ping 连通测试
+// 对单个网关执行 ping 连通测试,返回是否在线
 async function doPingGateway(gwId, gwName) {
-  if (!token || !gwId) return;
-  log('info', `→ ping 网关 ${gwName || gwId}...`);
+  if (!token || !gwId) return false;
   try {
     const path = `/api/rpc/twoway/${gwId}`;
     const requestBody = { method: 'ping', params: {} };
     const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
     const ok = data && data.status === 'ok' &&
                (data.message === 'pong' || data.message === 'ok');
-    log(ok ? 'ok' : 'err', ok ? `✓ 网关 ${gwName || gwId} 在线` : `✗ 网关 ${gwName || gwId} 离线`);
+    return ok;
   } catch (e) {
-    log('err', `✗ ping 失败: ${e.message}`);
+    return false;
   }
 }
 
