@@ -41,13 +41,14 @@
     padding: 10px 12px; background: #fafafa; border: 1px solid #e8e8e8;
     border-radius: 4px; cursor: pointer; user-select: none;
   }
-  .tree-header:hover { background: #f0f7ff; border-color: #1677ff; }
+  .tree-header:hover { border-color: #d9d9d9; }
   .tree-header.expanded { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
   .tree-toggle { font-size: 12px; color: #999; width: 16px; }
   .tree-title { font-weight: 600; font-size: 14px; color: #333; flex: 1; }
   .tree-meta { font-size: 12px; color: #888; }
-  .tree-actions { display: flex; gap: 6px; }
+  .tree-actions { display: flex; gap: 6px; padding: 6px 0 6px 12px; }
   .tree-actions button { padding: 4px 10px; font-size: 12px; margin: 0; }
+  .tree-actions button:hover { background: #389e0d; }
   .tree-body {
     display: none; padding: 8px 12px 12px;
     background: #fff; border: 1px solid #e8e8e8; border-top: none;
@@ -94,7 +95,6 @@
     <div class="row">
       <label>功能</label>
       <select id="cmdTemplate" onchange="onTemplateChange()">
-        <option value="list_tags">查询网关节点</option>
         <option value="update_price">修改价格</option>
         <option value="update_name">修改商品名称</option>
         <option value="update_tag">修改全部信息</option>
@@ -139,7 +139,6 @@ function clearAuth() {
 }
 
 const TEMPLATES = {
-  list_tags:    '{}',
   update_price: '{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}',
   update_name:  '{"tag_id":"TAG001","product":"农夫山泉"}',
   update_tag:   '{"tag_id":"TAG001","product":"农夫山泉","price":3.5,"unit":"元/瓶"}'
@@ -337,7 +336,7 @@ function renderTree() {
       renderTree();
     };
 
-    header.append(toggle, title, meta, actions);
+    header.append(toggle, title, meta);
 
     // 折叠体
     const body = document.createElement('div');
@@ -374,7 +373,7 @@ function renderTree() {
       });
     }
 
-    item.append(header, body);
+    item.append(header, actions, body);
     container.appendChild(item);
   });
 }
@@ -557,20 +556,6 @@ function renderResult(method, data, err) {
     return `网关 ${shortId} 离线\n（${reason}）`;
   }
 
-  if (method === 'list_tags') {
-    const tags = Array.isArray(data && data.tags) ? data.tags : [];
-    if (tags.length === 0) return '未发现价签节点';
-    const lines = [];
-    tags.forEach(t => {
-      lines.push(`节点 ${t.tag_id || '-'}`);
-      lines.push(`商品名称: ${t.product || '-'}`);
-      lines.push(`价格: ${t.price != null ? t.price : '-'}`);
-      lines.push(`单位: ${t.unit || '-'}`);
-      lines.push('');  // 空行分隔
-    });
-    return lines.join('\n').replace(/\n+$/, '');
-  }
-
   // update_price / update_name / update_tag
   if (data && data.status === 'ok') {
     const tag = data.tag_id ? `（节点 ${data.tag_id}）` : '';
@@ -602,9 +587,7 @@ async function doSendRpc() {
 
     $('resultBox').textContent = renderResult(method, data, null);
 
-    if (method === 'list_tags') {
-      log('ok', `✓ 查询完成，共返回 ${Array.isArray(data.tags) ? data.tags.length : 0} 个节点`);
-    } else if (method === 'ping') {
+    if (method === 'ping') {
       const ok = data && data.status === 'ok';
       log(ok ? 'ok' : 'err', ok ? '✓ 网关在线' : '✗ 网关离线');
     } else {
