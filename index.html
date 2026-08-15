@@ -33,6 +33,37 @@
   .device-meta { display: block; color: #666; font-size: 12px; line-height: 1.6; word-break: break-all; }
   .tip { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; padding: 8px 12px; font-size: 12px; color: #ad6800; margin-bottom: 12px; line-height: 1.6; }
   .ok { color: #52c41a; } .err { color: #f5222d; } .info { color: #1677ff; }
+
+  /* 折叠看板 */
+  .tree-item { margin: 4px 0; }
+  .tree-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; background: #fafafa; border: 1px solid #e8e8e8;
+    border-radius: 4px; cursor: pointer; user-select: none;
+  }
+  .tree-header:hover { background: #f0f7ff; border-color: #1677ff; }
+  .tree-header.expanded { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .tree-toggle { font-size: 12px; color: #999; width: 16px; }
+  .tree-title { font-weight: 600; font-size: 14px; color: #333; flex: 1; }
+  .tree-meta { font-size: 12px; color: #888; }
+  .tree-actions { display: flex; gap: 6px; }
+  .tree-actions button { padding: 4px 10px; font-size: 12px; margin: 0; }
+  .tree-body {
+    display: none; padding: 8px 12px 12px;
+    background: #fff; border: 1px solid #e8e8e8; border-top: none;
+    border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;
+  }
+  .tree-body.open { display: block; }
+  .node-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; margin: 2px 0; background: #f9f9f9;
+    border-radius: 3px; font-size: 13px;
+  }
+  .node-tag { font-weight: 600; color: #1677ff; min-width: 70px; }
+  .node-name { color: #333; flex: 1; }
+  .node-price { color: #f5222d; font-weight: 600; }
+  .node-unit { color: #888; font-size: 12px; }
+  .node-empty { color: #999; font-size: 13px; padding: 8px; }
 </style>
 </head>
 <body>
@@ -50,12 +81,12 @@
 
 <main id="appPage" class="page hidden">
   <div class="card">
-    <h2>查询并选择网关</h2>
+    <h2>价签看板</h2>
     <div class="row">
-      <button class="btn-green" id="btnQueryDevices" onclick="doQueryDevices()" disabled>查询网关</button>
+      <button class="btn-green" id="btnQueryDevices" onclick="doQueryDevices()" disabled>刷新网关列表</button>
       <span id="deviceCount" class="device-meta">正在准备查询</span>
     </div>
-    <div id="deviceList"><div class="box">尚未查询设备</div></div>
+    <div id="treeContainer"></div>
   </div>
 
   <div class="card">
@@ -111,6 +142,42 @@ const TEMPLATES = {
   update_name:  '{"tag_id":"TAG001","product":"农夫山泉"}',
   update_tag:   '{"tag_id":"TAG001","product":"农夫山泉","price":3.5,"unit":"元/瓶"}'
 };
+
+// ===== 数据模型 =====
+// gateways: 从 ThingsKit 查询的网关列表 [{id, name, label, type}]
+// nodes: 每个网关下的节点列表 {gwId: [{tag_id, product, price, unit}]}
+// expanded: 折叠状态 {gwId: true/false}
+let gateways = [];
+let nodes = {};
+let expanded = {};
+
+// ===== localStorage 持久化 =====
+const LS_PREFIX = 'pt_nodes_';      // pt_nodes_{gwId}
+const LS_EXPANDED = 'pt_expanded';  // 折叠状态
+
+function saveNodes(gwId) {
+  try { localStorage.setItem(LS_PREFIX + gwId, JSON.stringify(nodes[gwId] || [])); }
+  catch (e) { log('err', '保存节点失败: ' + e.message); }
+}
+
+function loadNodes(gwId) {
+  try {
+    const raw = localStorage.getItem(LS_PREFIX + gwId);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function saveExpanded() {
+  try { localStorage.setItem(LS_EXPANDED, JSON.stringify(expanded)); }
+  catch (e) {}
+}
+
+function loadExpanded() {
+  try {
+    const raw = localStorage.getItem(LS_EXPANDED);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
 
 function log(kind, msg) {
   const box = $('logBox');
@@ -170,7 +237,26 @@ async function doLogin() {
     log('ok', '登录成功');
     $('btnSend').disabled = true;
     $('btnQueryDevices').disabled = false;
+    // 页面加载时恢复折叠状态
+    expanded = loadExpanded();
     await doQueryDevices();
+    // 登录后自动展开有节点数据的网关
+    let autoExpanded = 0;
+    gateways.forEach(gw => {
+      const saved = loadNodes(gw.id);
+      if (saved && saved.length > 0 && !expanded[gw.id]) {
+        nodes[gw.id] = saved;
+        expanded[gw.id] = true;
+        autoExpanded++;
+      } else if (saved) {
+        nodes[gw.id] = saved;
+      }
+    });
+    if (autoExpanded > 0) {
+      saveExpanded();
+      renderTree();
+      log('info', `恢复了 ${autoExpanded} 个网关的节点数据`);
+    }
   } catch (e) {
     $('loginStatus').textContent = `登录失败: ${e.message}`;
     token = null;
@@ -197,36 +283,105 @@ function isGateway(device) {
   return isGatewayDevice && identity.includes('price_tag');
 }
 
-function renderDevices() {
-  const list = $('deviceList');
-  const selectedId = $('deviceId').value.trim();
-  list.replaceChildren();
+function renderTree() {
+  const container = $('treeContainer');
+  container.replaceChildren();
 
-  if (devices.length === 0) {
+  if (gateways.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'box';
-    empty.textContent = '当前账号下没有查询到网关设备';
-    list.appendChild(empty);
+    empty.textContent = '尚未查询到网关设备';
+    container.appendChild(empty);
     return;
   }
 
-  devices.forEach(device => {
-    const id = getDeviceId(device);
-    const button = document.createElement('button');
-    const name = document.createElement('span');
+  gateways.forEach(gw => {
+    const id = gw.id;
+    const isOpen = !!expanded[id];
+    const gwNodes = nodes[id] || [];
+    const nodeCount = gwNodes.length;
+
+    const item = document.createElement('div');
+    item.className = 'tree-item';
+
+    // 折叠头
+    const header = document.createElement('div');
+    header.className = 'tree-header' + (isOpen ? ' expanded' : '');
+
+    const toggle = document.createElement('span');
+    toggle.className = 'tree-toggle';
+    toggle.textContent = isOpen ? '▼' : '▶';
+
+    const title = document.createElement('span');
+    title.className = 'tree-title';
+    title.textContent = gw.name || id;
+
     const meta = document.createElement('span');
+    meta.className = 'tree-meta';
+    meta.textContent = nodeCount > 0 ? `${nodeCount} 个节点` : '未查询';
 
-    button.type = 'button';
-    button.className = 'btn-device' + (id === selectedId ? ' selected' : '');
-    button.onclick = () => selectDevice(id, device.name || id);
+    const actions = document.createElement('span');
+    actions.className = 'tree-actions';
 
-    name.className = 'device-name';
-    name.textContent = device.name || '未命名网关';
-    meta.className = 'device-meta';
-    meta.textContent = `标签: ${device.label || '-'} | 类型: ${device.type || '-'}\nUUID: ${id || '-'}`;
+    const btnPing = document.createElement('button');
+    btnPing.className = 'btn-orange';
+    btnPing.textContent = 'ping';
+    btnPing.onclick = (e) => { e.stopPropagation(); doPingGateway(id, gw.name || id); };
 
-    button.append(name, meta);
-    list.appendChild(button);
+    const btnQuery = document.createElement('button');
+    btnQuery.className = 'btn-green';
+    btnQuery.textContent = '查询节点';
+    btnQuery.onclick = (e) => { e.stopPropagation(); refreshNodes(id, gw.name || id); };
+
+    actions.append(btnPing, btnQuery);
+
+    // 点击 header 折叠/展开,并选中该网关
+    header.onclick = () => {
+      expanded[id] = !expanded[id];
+      saveExpanded();
+      selectDevice(id, gw.name || id);
+      renderTree();
+    };
+
+    header.append(toggle, title, meta, actions);
+
+    // 折叠体
+    const body = document.createElement('div');
+    body.className = 'tree-body' + (isOpen ? ' open' : '');
+
+    if (nodeCount === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'node-empty';
+      empty.textContent = '（尚未查询节点，点击"查询节点"刷新）';
+      body.appendChild(empty);
+    } else {
+      gwNodes.forEach(n => {
+        const row = document.createElement('div');
+        row.className = 'node-row';
+
+        const tag = document.createElement('span');
+        tag.className = 'node-tag';
+        tag.textContent = n.tag_id || '-';
+
+        const name = document.createElement('span');
+        name.className = 'node-name';
+        name.textContent = n.product || '-';
+
+        const price = document.createElement('span');
+        price.className = 'node-price';
+        price.textContent = (n.price != null) ? `¥${n.price}` : '-';
+
+        const unit = document.createElement('span');
+        unit.className = 'node-unit';
+        unit.textContent = n.unit || '';
+
+        row.append(tag, name, price, unit);
+        body.appendChild(row);
+      });
+    }
+
+    item.append(header, body);
+    container.appendChild(item);
   });
 }
 
@@ -237,7 +392,6 @@ function selectDevice(id, name) {
   }
   $('deviceId').value = id;
   $('btnSend').disabled = false;
-  renderDevices();
   log('ok', `✓ 已选择网关 ${name} (${id})`);
 }
 
@@ -261,20 +415,105 @@ async function doQueryDevices() {
       page += 1;
     } while (page < totalPages);
 
-    devices = allDevices.filter(device => isGateway(device) && getDeviceId(device));
-    $('deviceCount').textContent = `查询到 ${devices.length} 个价签网关（设备总数 ${allDevices.length}）`;
-    renderDevices();
+    const gwDevices = allDevices.filter(device => isGateway(device) && getDeviceId(device));
 
-    if (devices.length === 1) {
-      selectDevice(getDeviceId(devices[0]), devices[0].name || '未命名网关');
+    // 网关列表刷新:增删对比,保留已有节点数据
+    const newIds = new Set(gwDevices.map(getDeviceId));
+    Object.keys(nodes).forEach(oldId => {
+      if (!newIds.has(oldId)) {
+        delete nodes[oldId];
+        try { localStorage.removeItem(LS_PREFIX + oldId); } catch (e) {}
+      }
+    });
+
+    gateways = gwDevices.map(d => ({
+      id: getDeviceId(d),
+      name: d.name || getDeviceId(d),
+      label: d.label || '',
+      type: d.type || ''
+    }));
+
+    // 恢复每个网关的折叠状态和节点数据
+    gateways.forEach(gw => {
+      if (!(gw.id in expanded)) expanded[gw.id] = false;
+      if (!nodes[gw.id]) {
+        const saved = loadNodes(gw.id);
+        if (saved) nodes[gw.id] = saved;
+      }
+    });
+    saveExpanded();
+
+    $('deviceCount').textContent = `查询到 ${gateways.length} 个价签网关（设备总数 ${allDevices.length}）`;
+    renderTree();
+
+    if (gateways.length === 1) {
+      selectDevice(gateways[0].id, gateways[0].name);
     }
-    log('ok', `✓ 设备查询完成，共 ${allDevices.length} 台设备，${devices.length} 台价签网关`);
+    log('ok', `✓ 设备查询完成，共 ${allDevices.length} 台设备，${gateways.length} 台价签网关`);
   } catch (e) {
-    devices = [];
+    gateways = [];
     $('deviceCount').textContent = '查询失败';
-    renderDevices();
+    renderTree();
   } finally {
     button.disabled = !token;
+  }
+}
+
+// 查询指定网关的节点列表,增删对比后保存到 localStorage
+async function refreshNodes(gwId, gwName) {
+  if (!token || !gwId) return;
+  log('info', `→ 查询网关 ${gwName || gwId} 的节点列表...`);
+  try {
+    const path = `/api/rpc/twoway/${gwId}`;
+    const requestBody = { method: 'list_tags', params: {} };
+    const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
+
+    const freshTags = Array.isArray(data && data.tags) ? data.tags : [];
+    const oldTags = nodes[gwId] || [];
+
+    // 增删对比:以 tag_id 为键
+    const oldMap = {};
+    oldTags.forEach(t => { oldMap[t.tag_id] = t; });
+    const merged = freshTags.map(nt => {
+      const ot = oldMap[nt.tag_id];
+      return {
+        tag_id: nt.tag_id || '-',
+        product: nt.product || (ot ? ot.product : '-'),
+        price: (nt.price != null) ? nt.price : (ot ? ot.price : null),
+        unit: nt.unit || (ot ? ot.unit : '')
+      };
+    });
+
+    // 增:新节点数;删:旧节点数 - 合并后保留的旧节点数
+    const newCount = freshTags.length;
+    const removedCount = oldTags.length - merged.filter(m => oldMap[m.tag_id]).length;
+
+    nodes[gwId] = merged;
+    saveNodes(gwId);
+    expanded[gwId] = true;  // 查询后自动展开
+    saveExpanded();
+    renderTree();
+
+    log('ok', `✓ 网关 ${gwName || gwId} 查询完成: ${newCount} 个节点` +
+             (removedCount > 0 ? `,删除 ${removedCount} 个旧节点` : ''));
+  } catch (e) {
+    log('err', `✗ 查询节点失败: ${e.message}`);
+  }
+}
+
+// 对单个网关执行 ping 连通测试
+async function doPingGateway(gwId, gwName) {
+  if (!token || !gwId) return;
+  log('info', `→ ping 网关 ${gwName || gwId}...`);
+  try {
+    const path = `/api/rpc/twoway/${gwId}`;
+    const requestBody = { method: 'ping', params: {} };
+    const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
+    const ok = data && data.status === 'ok' &&
+               (data.message === 'pong' || data.message === 'ok');
+    log(ok ? 'ok' : 'err', ok ? `✓ 网关 ${gwName || gwId} 在线` : `✗ 网关 ${gwName || gwId} 离线`);
+  } catch (e) {
+    log('err', `✗ ping 失败: ${e.message}`);
   }
 }
 
