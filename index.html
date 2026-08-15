@@ -69,8 +69,9 @@
   .node-row input.node-input {
     flex: 1; min-width: 0; max-width: none; padding: 3px 2px; font-size: 12px;
     border: none; border-bottom: 1px solid #ccc; border-radius: 0;
-    background: transparent;
+    background: transparent; outline: none;
   }
+  .node-row input.node-input:focus { outline: none; border-bottom-color: #1677ff; }
   .node-row input.node-price-input { flex: 1; }
   .node-row input.node-unit-input { flex: 1; }
   .tree-actions .node-send { padding: 3px 10px; font-size: 12px; margin: 0; flex-shrink: 0; white-space: nowrap; min-width: 48px; }
