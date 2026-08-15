@@ -103,20 +103,6 @@
       </select>
     </div>
     <div class="row">
-      <label>方式</label>
-      <select id="way">
-        <option value="twoway">等待回复</option>
-        <option value="oneway">不等待回复</option>
-      </select>
-    </div>
-    <div class="row">
-      <label>持久性</label>
-      <select id="persistent">
-        <option value="true">开启</option>
-        <option value="false">关闭</option>
-      </select>
-    </div>
-    <div class="row">
       <label style="vertical-align:top">命令参数</label>
       <textarea id="paramsBox">{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}</textarea>
     </div>
@@ -540,9 +526,6 @@ async function doPingGateway(gwId, gwName) {
 function onTemplateChange() {
   const command = $('cmdTemplate').value;
   $('paramsBox').value = TEMPLATES[command];
-  if (command === 'list_tags') {
-    $('way').value = 'twoway';
-  }
 }
 
 function buildBody() {
@@ -555,11 +538,8 @@ function buildBody() {
     throw new Error('no device id');
   }
   return {
-    additionalInfo: { cmdType: 1 },
     method: $('cmdTemplate').value,
-    persistent: $('persistent').value === 'true',
     params: params,
-    way: $('way').value,
     deviceId: deviceId
   };
 }
