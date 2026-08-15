@@ -36,9 +36,9 @@
 
   /* 折叠看板 */
   .tree-item { margin: 4px 0; }
-  .tree-row { display: flex; align-items: stretch; gap: 8px; }
+  .tree-row { display: flex; align-items: stretch; gap: 2px; }
   .tree-row .tree-header { flex: 1; }
-  .tree-row .tree-actions { padding: 0 8px; display: flex; align-items: stretch; }
+  .tree-row .tree-actions { display: flex; align-items: stretch; }
   .tree-row .tree-actions button { height: 100%; padding: 10px 16px; }
   .tree-header {
     display: flex; align-items: center; gap: 8px;
@@ -94,22 +94,8 @@
   </div>
 
   <div class="card">
-    <h2>命令下发</h2>
-    <div class="row"><label>当前网关</label><input id="deviceId" readonly placeholder="请先选择网关"></div>
-    <div class="row">
-      <label>功能</label>
-      <select id="cmdTemplate" onchange="onTemplateChange()">
-        <option value="update_price">修改价格</option>
-        <option value="update_name">修改商品名称</option>
-        <option value="update_tag">修改全部信息</option>
-      </select>
-    </div>
-    <div class="row">
-      <label style="vertical-align:top">命令参数</label>
-      <textarea id="paramsBox">{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}</textarea>
-    </div>
-    <div class="row"><button class="btn-orange" id="btnSend" onclick="doSendRpc()" disabled>发送命令</button></div>
-    <div class="row"><label style="vertical-align:top">执行结果</label><div class="box" id="resultBox" style="min-height:40px"></div></div>
+    <h2>执行结果</h2>
+    <div class="box" id="resultBox" style="min-height:40px"></div>
   </div>
 
   <div class="card">
@@ -142,11 +128,7 @@ function clearAuth() {
   try { localStorage.removeItem(LS_AUTH); } catch (e) {}
 }
 
-const TEMPLATES = {
-  update_price: '{"tag_id":"TAG001","price":3.5,"unit":"元/瓶"}',
-  update_name:  '{"tag_id":"TAG001","product":"农夫山泉"}',
-  update_tag:   '{"tag_id":"TAG001","product":"农夫山泉","price":3.5,"unit":"元/瓶"}'
-};
+const TEMPLATES = {};
 
 // ===== 数据模型 =====
 // gateways: 从 ThingsKit 查询的网关列表 [{id, name, label, type}]
@@ -239,7 +221,6 @@ async function doLogin() {
     $('loginPage').classList.add('hidden');
     $('appPage').classList.remove('hidden');
     log('ok', '登录成功');
-    $('btnSend').disabled = true;
     $('btnQueryDevices').disabled = false;
     // 页面加载时恢复折叠状态
     expanded = loadExpanded();
@@ -265,9 +246,6 @@ async function doLogin() {
     log('err', `登录失败: ${e.message}`);
     token = null;
     devices = [];
-    $('deviceId').value = '';
-    renderDevices();
-    $('btnSend').disabled = true;
     $('btnQueryDevices').disabled = true;
   } finally {
     button.disabled = false;
@@ -352,7 +330,7 @@ function renderTree() {
       empty.textContent = '（尚未查询节点，点击"查询节点"刷新）';
       body.appendChild(empty);
     } else {
-      gwNodes.forEach(n => {
+      gwNodes.forEach((n, idx) => {
         const row = document.createElement('div');
         row.className = 'node-row';
 
@@ -360,19 +338,38 @@ function renderTree() {
         tag.className = 'node-tag';
         tag.textContent = n.tag_id || '-';
 
-        const name = document.createElement('span');
-        name.className = 'node-name';
-        name.textContent = n.product || '-';
+        const nameInput = document.createElement('input');
+        nameInput.className = 'node-input';
+        nameInput.type = 'text';
+        nameInput.value = n.product || '';
+        nameInput.placeholder = '商品名称';
 
-        const price = document.createElement('span');
-        price.className = 'node-price';
-        price.textContent = (n.price != null) ? `¥${n.price}` : '-';
+        const priceInput = document.createElement('input');
+        priceInput.className = 'node-input node-price-input';
+        priceInput.type = 'number';
+        priceInput.step = '0.01';
+        priceInput.value = (n.price != null) ? n.price : '';
+        priceInput.placeholder = '价格';
 
-        const unit = document.createElement('span');
-        unit.className = 'node-unit';
-        unit.textContent = n.unit || '';
+        const unitInput = document.createElement('input');
+        unitInput.className = 'node-input node-unit-input';
+        unitInput.type = 'text';
+        unitInput.value = n.unit || '';
+        unitInput.placeholder = '单位';
 
-        row.append(tag, name, price, unit);
+        const btnSend = document.createElement('button');
+        btnSend.className = 'btn-orange node-send';
+        btnSend.textContent = '下发';
+        btnSend.onclick = (e) => {
+          e.stopPropagation();
+          sendNodeUpdate(id, gw.name || id, n.tag_id || '-', {
+            product: nameInput.value.trim(),
+            price: priceInput.value !== '' ? Number(priceInput.value) : null,
+            unit: unitInput.value.trim()
+          });
+        };
+
+        row.append(tag, nameInput, priceInput, unitInput, btnSend);
         body.appendChild(row);
       });
     }
@@ -391,8 +388,6 @@ function selectDevice(id, name) {
     log('err', '所选设备没有有效 UUID');
     return;
   }
-  $('deviceId').value = id;
-  $('btnSend').disabled = false;
   log('ok', `✓ 已选择网关 ${name} (${id})`);
 }
 
@@ -519,35 +514,37 @@ async function doPingGateway(gwId, gwName) {
   }
 }
 
-function onTemplateChange() {
-  const command = $('cmdTemplate').value;
-  $('paramsBox').value = TEMPLATES[command];
-}
-
-function buildBody() {
-  let params;
-  try { params = JSON.parse($('paramsBox').value); }
-  catch (e) { log('err', 'params JSON 格式错误: ' + e.message); throw e; }
-  const deviceId = $('deviceId').value.trim();
-  if (!deviceId) {
-    log('err', '请先查询并选择网关设备');
-    throw new Error('no device id');
+// 节点下发:update_tag 命令，带 tag_id/product/price/unit
+async function sendNodeUpdate(gwId, gwName, tagId, fields) {
+  if (!token || !gwId || !tagId) return;
+  const params = { tag_id: tagId };
+  if (fields.product != null) params.product = fields.product;
+  if (fields.price != null) params.price = fields.price;
+  if (fields.unit != null) params.unit = fields.unit;
+  $('resultBox').textContent = `等待下发到节点 ${tagId}...`;
+  log('info', `→ 下发到 ${gwName || gwId} / ${tagId}: ${JSON.stringify(params)}`);
+  try {
+    const path = `/api/rpc/twoway/${gwId}`;
+    const requestBody = { method: 'update_tag', params };
+    const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
+    const ok = data && (data.status === 'ok' || data.status === 'success');
+    $('resultBox').textContent = ok
+      ? `修改成功（节点 ${tagId}）`
+      : `修改失败（节点 ${tagId}）${data && data.message ? ': ' + data.message : ''}`;
+    log(ok ? 'ok' : 'err', ok ? `✓ ${tagId} 修改成功` : `✗ ${tagId} 修改失败`);
+    // 成功后刷新该网关节点列表，反映新值
+    if (ok) await refreshNodes(gwId, gwName);
+  } catch (e) {
+    $('resultBox').textContent = `请求失败: ${e.message}`;
+    log('err', `✗ 下发失败: ${e.message}`);
   }
-  return {
-    method: $('cmdTemplate').value,
-    params: params,
-    deviceId: deviceId
-  };
 }
 
 // 把网关返回的 JSON 转义成人类可读的执行结果
 function renderResult(method, data, err) {
-  const deviceId = $('deviceId').value.trim();
-  const shortId = deviceId ? deviceId.slice(-4) : '?';
-
   // 请求本身失败
   if (err) {
-    if (method === 'ping') return `网关 ${shortId} 离线\n（请求失败: ${err}）`;
+    if (method === 'ping') return `网关离线\n（请求失败: ${err}）`;
     return `请求失败: ${err}`;
   }
 
@@ -559,9 +556,9 @@ function renderResult(method, data, err) {
   if (method === 'ping') {
     const ok = data && data.status === 'ok' &&
                (data.message === 'pong' || data.message === 'ok');
-    if (ok) return `网关 ${shortId} 在线`;
+    if (ok) return `网关在线`;
     const reason = (data && data.message) ? data.message : '无应答';
-    return `网关 ${shortId} 离线\n（${reason}）`;
+    return `网关离线\n（${reason}）`;
   }
 
   // update_price / update_name / update_tag
@@ -579,35 +576,6 @@ function renderResult(method, data, err) {
   return `未知响应格式:\n${JSON.stringify(data, null, 2)}`;
 }
 
-async function doSendRpc() {
-  if (!token) { log('err', '请先登录'); return; }
-  let body;
-  try { body = buildBody(); }
-  catch (e) { return; }
-  const method = body.method;
-  $('resultBox').textContent = '等待平台响应...';
-
-  try {
-    // 所有命令统一走 twoway 同步接口，直接拿网关应答
-    const path = `/api/rpc/twoway/${body.deviceId}`;
-    const requestBody = { method: body.method, params: body.params };
-    const data = await api(path, { method: 'POST', body: JSON.stringify(requestBody) });
-
-    $('resultBox').textContent = renderResult(method, data, null);
-
-    if (method === 'ping') {
-      const ok = data && data.status === 'ok';
-      log(ok ? 'ok' : 'err', ok ? '✓ 网关在线' : '✗ 网关离线');
-    } else {
-      const ok = data && data.status === 'ok';
-      log(ok ? 'ok' : 'err', ok ? '✓ 修改成功' : '✗ 修改失败');
-    }
-  } catch (e) {
-    $('resultBox').textContent = renderResult(method, null, e.message);
-    log('err', `✗ 命令失败: ${e.message}`);
-  }
-}
-
 // 页面加载时填充上次的登录凭证(不自动登录,需点击登录)
 (function prefillAuth() {
   const saved = loadAuth();
@@ -616,8 +584,6 @@ async function doSendRpc() {
   if (saved.username) { $('username').value = saved.username; }
   if (saved.password) { $('password').value = saved.password; }
 })();
-
-onTemplateChange();
 </script>
 </body>
 </html>
